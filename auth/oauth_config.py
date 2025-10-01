@@ -25,7 +25,11 @@ class OAuthConfig:
         # Base server configuration
         self.base_uri = os.getenv("WORKSPACE_MCP_BASE_URI", "http://localhost")
         self.port = int(os.getenv("PORT", os.getenv("WORKSPACE_MCP_PORT", "8000")))
-        self.base_url = f"{self.base_uri}:{self.port}"
+        # Don't add port if base_uri already includes it (e.g., full URL from FastMCP Cloud)
+if self.base_uri.startswith(("http://", "https://")):
+    self.base_url = self.base_uri
+else:
+    self.base_url = f"{self.base_uri}:{self.port}"
 
         # External URL for reverse proxy scenarios
         self.external_url = os.getenv("WORKSPACE_EXTERNAL_URL")
