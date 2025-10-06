@@ -12,6 +12,10 @@ from auth.google_auth import get_authenticated_google_service, GoogleAuthenticat
 from auth.oauth21_session_store import get_oauth21_session_store
 from auth.oauth_config import is_oauth21_enabled, get_oauth_config
 from core.context import set_fastmcp_session_id
+from fastmcp.server.dependencies import get_context
+from auth.oauth21_session_store import get_credentials_from_token
+
+
 from auth.scopes import (
     GMAIL_READONLY_SCOPE,
     GMAIL_SEND_SCOPE,
@@ -216,6 +220,23 @@ async def get_authenticated_google_service_oauth21(
         allow_recent_auth=allow_recent_auth,
     )
 
+    # If no credentials found, try to get from Bearer token
+    if not credentials:
+        try:
+            ctx = get_context()
+            
+            if ctx and hasattr(ctx, 'request'):
+                headers = dict(ctx.request.headers)
+                auth_header = headers.get("authorization", "")
+                
+                if auth_header.startswith("Bearer "):
+                    token = auth_header[7:]
+                    credentials = get_credentials_from_token(token, user_google_email)
+                    if credentials:
+                        logger.debug(f"Retrieved credentials from Bearer token for {user_google_email}")
+        except Exception as e:
+            logger.debug(f"Failed to get credentials from Bearer token: {e}")
+    
     if not credentials:
         raise GoogleAuthenticationError(
             f"Access denied: Cannot retrieve credentials for {user_google_email}. "

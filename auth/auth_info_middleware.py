@@ -95,6 +95,18 @@ class AuthInfoMiddleware(Middleware):
                                     context.fastmcp_context.set_state("authenticated_user_email", user_email)
                                     context.fastmcp_context.set_state("authenticated_via", "bearer_token")
                                     
+                                    # Store token in session store for future use
+                                    try:
+                                        from auth.oauth21_session_store import store_token_session
+                                        store_token_session({
+                                            "access_token": token_str,
+                                            "token_type": "Bearer",
+                                            "expires_in": 3600
+                                        }, user_email)
+                                        logger.debug(f"Stored Bearer token in session store for {user_email}")
+                                    except Exception as e:
+                                        logger.warning(f"Failed to store token in session store: {e}")
+                                    
                                     logger.info(f"Authenticated via Google OAuth: {user_email}")
                                 else:
                                     logger.error("Failed to verify Google OAuth token")

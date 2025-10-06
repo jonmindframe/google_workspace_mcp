@@ -12,6 +12,8 @@ from typing import Dict, Optional, Any
 from threading import RLock
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
+import requests
+
 
 from google.oauth2.credentials import Credentials
 
@@ -590,22 +592,40 @@ def get_credentials_from_token(access_token: str, user_email: Optional[str] = No
                 logger.debug(f"Found matching credentials from store for {user_email}")
                 return credentials
 
-        # Otherwise, create minimal credentials with just the access token
-        # Assume token is valid for 1 hour (typical for Google tokens)
-        expiry = datetime.now(timezone.utc) + timedelta(hours=1)
-
-        credentials = Credentials(
-            token=access_token,
-            refresh_token=None,
-            token_uri="https://oauth2.googleapis.com/token",
-            client_id=_auth_provider.client_id,
-            client_secret=_auth_provider.client_secret,
-            scopes=None,  # Will be populated from token claims if available
-            expiry=expiry
-        )
-
-        logger.debug("Created Google credentials from bearer token")
-        return credentials
+        # Validate token with Google to get proper information
+        GOOGLE_TOKENINFO_URL = "https://www.googleapis.com/oauth2/v1/tokeninfo"
+        try:
+            response = requests.get(
+                f"{GOOGLE_TOKENINFO_URL}?access_token={access_token}",
+                timeout=10
+            )
+            if response.status_code == 200:
+                token_info = response.json()
+                user_email = token_info.get("email")
+                expires_in = token_info.get("expires_in", 3600)
+                scopes = token_info.get("scope", "").split() if token_info.get("scope") else []
+                
+                # Calculate expiry from token info (timezone-naive for Google auth library)
+                expiry = datetime.now(timezone.utc) + timedelta(hours=1)
+                
+                credentials = Credentials(
+                    token=access_token,
+                    refresh_token=None,
+                    token_uri="https://oauth2.googleapis.com/token",
+                    client_id=_auth_provider.client_id,
+                    client_secret=_auth_provider.client_secret,
+                    scopes=scopes,
+                    expiry=expiry
+                )
+                
+                logger.debug(f"Created Google credentials from validated bearer token for {user_email}")
+                return credentials
+            else:
+                logger.error(f"Token validation failed: {response.status_code}")
+                return None
+        except Exception as e:
+            logger.error(f"Failed to validate token with Google: {e}")
+            return None
 
     except Exception as e:
         logger.error(f"Failed to create Google credentials from token: {e}")
