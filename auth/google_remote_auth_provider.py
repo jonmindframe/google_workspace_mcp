@@ -43,6 +43,10 @@ from auth.oauth_common_handlers import (
 
 logger = logging.getLogger(__name__)
 
+# Google OAuth token validation endpoints
+GOOGLE_TOKENINFO_URL = "https://oauth2.googleapis.com/tokeninfo"
+GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
+
 
 class GoogleRemoteAuthProvider(RemoteAuthProvider):
     """
@@ -87,21 +91,22 @@ class GoogleRemoteAuthProvider(RemoteAuthProvider):
         # Initialize RemoteAuthProvider with base URL (no /mcp/ suffix)
         # The /mcp/ resource URL is handled in the protected resource metadata endpoint
         super().__init__(
+            base_url=self.base_url,
             token_verifier=token_verifier,
             authorization_servers=[AnyHttpUrl(self.base_url)],
-            resource_server_url=self.base_url,
         )
 
         logger.debug(
             f"Initialized GoogleRemoteAuthProvider with base_url={self.base_url}"
         )
 
-    def get_routes(self) -> List[Route]:
+    def get_routes(self, **kwargs) -> List[Route]:
         """
         Add OAuth routes at canonical locations.
+        Accepts either mcp_path or mcp_endpoint for compatibility with different FastMCP versions.
         """
         # Get the standard OAuth protected resource routes from RemoteAuthProvider
-        parent_routes = super().get_routes()
+        parent_routes = super().get_routes(**kwargs)
 
         # Filter out the parent's oauth-protected-resource route since we're replacing it
         routes = [
@@ -173,9 +178,7 @@ class GoogleRemoteAuthProvider(RemoteAuthProvider):
             try:
                 # Verify the access token using Google's tokeninfo endpoint
                 async with aiohttp.ClientSession() as session:
-                    url = (
-                        f"https://oauth2.googleapis.com/tokeninfo?access_token={token}"
-                    )
+                    url = f"{GOOGLE_TOKENINFO_URL}?access_token={token}"
                     async with session.get(url) as response:
                         if response.status != 200:
                             logger.error(
