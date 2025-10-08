@@ -25,7 +25,16 @@ class OAuthConfig:
         # Base server configuration
         self.base_uri = os.getenv("WORKSPACE_MCP_BASE_URI", "http://localhost")
         self.port = int(os.getenv("PORT", os.getenv("WORKSPACE_MCP_PORT", "8000")))
-        self.base_url = self.base_uri if self.base_uri.startswith(("http://", "https://")) else f"{self.base_uri}:{self.port}"     
+        
+        # Build base_url with port - handle both cases
+        if self.base_uri.startswith(("http://", "https://")):
+            if ":" in self.base_uri.split("://")[1]:
+                self.base_url = self.base_uri
+            else:
+                self.base_url = f"{self.base_uri}:{self.port}"
+        else:
+            # Add protocol and port
+            self.base_url = f"{self.base_uri}:{self.port}"     
 
         # External URL for reverse proxy scenarios
         self.external_url = os.getenv("WORKSPACE_EXTERNAL_URL")

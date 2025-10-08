@@ -110,11 +110,38 @@ async def handle_proxy_token_exchange(request: Request):
             body = urlencode(form_data, doseq=True).encode('utf-8')
 
         # Forward request to Google
+        decoded_body = body.decode('utf-8')
+        if 'code=' in decoded_body:
+            code_start = decoded_body.find('code=') + 5
+            code_end = decoded_body.find('&', code_start)
+            if code_end == -1:
+                code_end = len(decoded_body)
+            raw_code = decoded_body[code_start:code_end]
+                 
+        # Check client ID and secret
+        if 'client_id=' in decoded_body:
+            client_id_start = decoded_body.find('client_id=') + 10
+            client_id_end = decoded_body.find('&', client_id_start)
+            if client_id_end == -1:
+                client_id_end = len(decoded_body)
+            client_id = decoded_body[client_id_start:client_id_end]
+        
+        if 'client_secret=' in decoded_body:
+            client_secret_start = decoded_body.find('client_secret=') + 14
+            client_secret_end = decoded_body.find('&', client_secret_start)
+            if client_secret_end == -1:
+                client_secret_end = len(decoded_body)
+            client_secret = decoded_body[client_secret_start:client_secret_end]
+        
         async with aiohttp.ClientSession() as session:
             headers = {"Content-Type": content_type}
 
             async with session.post("https://oauth2.googleapis.com/token", data=body, headers=headers) as response:
-                response_data = await response.json()
+                response_text = await response.text()              
+                try:
+                    response_data = await response.json()
+                except:
+                    response_data = {"error": "parse_error", "raw_response": response_text}
 
                 # Log for debugging
                 if response.status != 200:
