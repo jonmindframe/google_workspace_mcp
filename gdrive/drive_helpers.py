@@ -4,7 +4,11 @@ Google Drive Helper Functions
 Shared utilities for Google Drive operations including permission checking.
 """
 import re
+import asyncio
+import logging
 from typing import List, Dict, Any, Optional
+
+logger = logging.getLogger(__name__)
 
 
 def check_public_link_permission(permissions: List[Dict[str, Any]]) -> bool:
@@ -108,3 +112,89 @@ def build_drive_list_params(
         list_params["corpora"] = corpora
 
     return list_params
+
+
+async def find_or_create_folder(
+    drive_service: Any,
+    folder_name: str,
+    drive_id: str = None,
+    include_items_from_all_drives: bool = True
+) -> str:
+    """
+    Finds a folder by name or creates it if it doesn't exist.
+    Supports both My Drive and Shared Drives.
+    
+    Args:
+        drive_service: Google Drive service instance
+        folder_name: Name of the folder to find/create
+        drive_id: ID of the shared drive (optional)
+        include_items_from_all_drives: Whether to include items from all drives when searching
+        
+    Returns:
+        str: Folder ID if found/created, None if failed
+    """
+    logger.info(f"[find_or_create_folder] Looking for folder '{folder_name}', drive_id={drive_id}")
+    
+    try:
+        # Search for existing folder
+        escaped_name = folder_name.replace("'", "\\'")
+        query = f"name = '{escaped_name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+        
+        # Build search parameters
+        search_params = {
+            "q": query,
+            "pageSize": 10,
+            "fields": "files(id, name, parents)",
+            "supportsAllDrives": True,
+            "includeItemsFromAllDrives": include_items_from_all_drives
+        }
+        
+        # Add drive-specific parameters if drive_id is provided
+        if drive_id:
+            search_params["corpora"] = "drive"
+            search_params["driveId"] = drive_id
+        
+        results = await asyncio.to_thread(
+            drive_service.files().list(**search_params).execute
+        )
+        
+        folders = results.get('files', [])
+        
+        if folders:
+            # Folder exists, return the first match
+            folder_id = folders[0]['id']
+            logger.info(f"[find_or_create_folder] Found existing folder '{folder_name}' with ID: {folder_id}")
+            return folder_id
+        
+        # Folder doesn't exist, create it
+        logger.info(f"[find_or_create_folder] Folder '{folder_name}' not found, creating new folder")
+        
+        # Determine parent folder for the new folder
+        parent_folder = 'root'
+        if drive_id:
+            # For shared drives, the parent is the drive root
+            parent_folder = drive_id
+        
+        # Create folder metadata
+        folder_metadata = {
+            'name': folder_name,
+            'mimeType': 'application/vnd.google-apps.folder',
+            'parents': [parent_folder]
+        }
+        
+        # Create the folder
+        created_folder = await asyncio.to_thread(
+            drive_service.files().create(
+                body=folder_metadata,
+                fields='id, name',
+                supportsAllDrives=True
+            ).execute
+        )
+        
+        new_folder_id = created_folder.get('id')
+        logger.info(f"[find_or_create_folder] Successfully created folder '{folder_name}' with ID: {new_folder_id}")
+        return new_folder_id
+        
+    except Exception as e:
+        logger.error(f"[find_or_create_folder] Error finding/creating folder '{folder_name}': {e}")
+        return None
